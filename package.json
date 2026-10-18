@@ -1,0 +1,26 @@
+{
+  "name": "tamastudio",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "check:syntax": "node scripts/check-syntax.mjs",
+    "check:security": "node scripts/check-security.mjs",
+    "test:unit": "node --test scripts/*.test.mjs",
+    "check:imports": "node scripts/check-imports.mjs",
+    "check:all": "npm run check:syntax && npm run check:imports && npm run check:security && npm run test:unit",
+    "check:release": "node scripts/check-release.mjs"
+  },
+  "dependencies": {
+    "next": "16.4.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "firebase-admin": "14.5.0",
+    "@netlify/blobs": "11.1.4",
+    "@google-cloud/firestore": "9.3.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

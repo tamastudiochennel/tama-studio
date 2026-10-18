@@ -1,0 +1,97 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function uref() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function me() { return get(uref()).data; }
+    function hasGoogle() { return signedIn() && 'google.com' in request.auth.token.firebase.identities; }
+    function ok() { return hasGoogle() && exists(uref()) && me().blocked == false; }
+    function only(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+    match /users/{uid} {
+      // Staff reads of other profiles are mediated by /api/admin/data to bind access to the active server session.
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list: if false;
+      // Profiles are provisioned by the trusted server endpoint, never by client writes.
+      allow create, delete: if false;
+      allow update: if ok() && request.auth.uid == uid && only(['displayName', 'photoURL', 'wa'])
+        && request.resource.data.displayName is string && request.resource.data.displayName.size() <= 100
+        && request.resource.data.photoURL is string && request.resource.data.photoURL.size() <= 1000
+        && (!('wa' in request.resource.data) || (request.resource.data.wa is string && request.resource.data.wa.size() <= 20));
+    }
+
+    match /usernames/{u} {
+      allow read, write: if false;
+    }
+
+    match /ids/{id} {
+      allow read, write: if false;
+    }
+
+    match /cms/{d} {
+      // The private package catalog is served through a sanitized public API, never direct Firestore reads.
+      allow read: if d in ['services', 'portfolio', 'faq'];
+      allow write: if false;
+    }
+
+    match /orders/{id} {
+      // Staff order reads go through /api/admin/data, which validates the exact active session ID.
+      allow read: if ok() && resource.data.uid == request.auth.uid;
+      // Creation, pricing, proof submission and staff transitions use trusted server routes.
+      allow create, delete: if false;
+      allow update: if ok()
+        && resource.data.uid == request.auth.uid
+        && resource.data.status in ['menunggu_bayar', 'menunggu_konfirmasi_harga', 'menunggu_persetujuan_harga', 'ditolak']
+        && request.resource.data.status == 'dibatalkan'
+        && only(['status', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time;
+    }
+
+    match /payment_proofs/{id} {
+      allow get: if ok() && resource.data.uid == request.auth.uid;
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+
+    match /testimonials/{id} {
+      allow read: if resource.data.status == 'approved' || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create: if ok() && request.resource.data.uid == request.auth.uid && request.resource.data.status == 'pending'
+        && id == request.resource.data.orderId
+        && request.resource.data.keys().hasOnly(['uid', 'orderId', 'name', 'rating', 'text', 'status', 'createdAt'])
+        && request.resource.data.name is string && request.resource.data.name.size() <= 100
+        && request.resource.data.rating is number && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+        && request.resource.data.text is string && request.resource.data.text.size() <= 600
+        && request.resource.data.createdAt == request.time
+        && get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.uid == request.auth.uid
+        && get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.status == 'selesai';
+      allow update, delete: if false;
+    }
+
+    match /chats/{cid} {
+      allow read: if signedIn() && request.auth.uid == cid;
+      // Thread identity and last-message metadata are written by /api/chat only.
+      allow create, update, delete: if false;
+      match /messages/{mid} {
+        allow read: if signedIn() && request.auth.uid == cid;
+        // Client and staff messages are mediated by server routes with rate limits.
+        allow create, update, delete: if false;
+      }
+    }
+
+    match /stats/{d} {
+      allow read, write: if false;
+    }
+
+    match /admin_logs/{id} {
+      allow read, write: if false;
+    }
+
+    match /admin_gate/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
+    }
+
+    match /error_logs/{id} {
+      allow read, write: if false;
+    }
+  }
+}
